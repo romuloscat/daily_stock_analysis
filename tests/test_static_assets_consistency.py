@@ -176,6 +176,32 @@ def test_missing_asset_returns_safe_404_content_types(tmp_path: Path) -> None:
     assert html_response.headers["content-type"].startswith("text/plain")
 
 
+def test_existing_asset_is_served_from_explicit_assets_route(tmp_path: Path) -> None:
+    from api.app import create_app
+
+    static_dir = tmp_path / "static"
+    assets_dir = static_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    js_file = assets_dir / "index-abc.js"
+    css_file = assets_dir / "index-abc.css"
+    js_file.write_text("console.log('ok')", encoding="utf-8")
+    css_file.write_text("body{color:#fff}", encoding="utf-8")
+    _write_index(static_dir, _vite_index("index-abc.js", "index-abc.css"))
+
+    client = TestClient(create_app(static_dir=static_dir))
+
+    js_response = client.get("/assets/index-abc.js")
+    css_response = client.get("/assets/index-abc.css")
+
+    assert js_response.status_code == 200
+    assert js_response.text == "console.log('ok')"
+    assert js_response.headers["content-type"].startswith("text/javascript")
+
+    assert css_response.status_code == 200
+    assert css_response.text == "body{color:#fff}"
+    assert css_response.headers["content-type"].startswith("text/css")
+
+
 @pytest.mark.parametrize(
     "request_path",
     [
