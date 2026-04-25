@@ -15,17 +15,68 @@ FastAPI 应用工厂模块
     app = create_app()
 """
 
+import logging
 import mimetypes
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+
+logger = logging.getLogger(__name__)
+
+# Match src="/assets/foo.js" / href="/assets/foo.css" produced by the
+# vite build. Used by the startup self-check to surface packaging
+# mismatches early (see GitHub #1064 / #1065 / #1050).
+_INDEX_ASSET_REF_PATTERN = re.compile(
+    r"""(?:src|href)\s*=\s*["'](/assets/[^"']+)["']""",
+    re.IGNORECASE,
+)
+
+
+def _check_frontend_assets_consistency(static_dir: Path) -> List[str]:
+    """
+    Verify that ``index.html`` only references assets that actually exist
+    under ``static_dir``. Returns the list of missing references; an empty
+    list means the bundle is consistent.
+
+    Logs an actionable error when a mismatch is detected so the root cause
+    is visible in ``logs/desktop.log`` instead of surfacing as a silent
+    blank page.
+    """
+    index_html = static_dir / "index.html"
+    if not index_html.is_file():
+        return []
+    try:
+        html = index_html.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        logger.warning("Failed to read %s for asset check: %s", index_html, exc)
+        return []
+
+    missing: List[str] = []
+    for match in _INDEX_ASSET_REF_PATTERN.finditer(html):
+        ref = match.group(1)
+        candidate = static_dir / ref.lstrip("/")
+        if not candidate.is_file() and ref not in missing:
+            missing.append(ref)
+
+    if missing:
+        logger.error(
+            "Frontend bundle is inconsistent: index.html references %d asset(s) "
+            "that are not present on disk under %s. This will surface as a "
+            "blank page in the desktop app (see GitHub #1064 / #1065). "
+            "Missing: %s. Re-run the frontend build and make sure the packaging "
+            "step copies the freshly generated static/ directory.",
+            len(missing),
+            static_dir,
+            ", ".join(missing),
+        )
+    return missing
 
 from api.v1 import api_v1_router
 from api.middlewares.auth import add_auth_middleware
@@ -121,6 +172,11 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     has_frontend = static_dir.exists() and (static_dir / "index.html").exists()
     
     if has_frontend:
+        # Surface bundle inconsistencies as soon as the app starts so that
+        # blank-page reports (#1064 / #1065 / #1050) can be diagnosed from
+        # logs/desktop.log instead of via browser devtools.
+        _check_frontend_assets_consistency(static_dir)
+
         @app.get("/", include_in_schema=False)
         async def root():
             """根路由 - 返回前端页面"""
@@ -177,11 +233,36 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     # ============================================================
     
     if has_frontend:
-        # 挂载静态资源目录
+        # Serve `/assets/*` explicitly so that misses return a plain-text
+        # 404 with the correct Content-Type instead of the default JSON
+        # error response. JSON for a JS/CSS request is what masked the
+        # blank-page root cause in #1064; here we make it obvious that the
+        # static file simply does not exist on disk.
         assets_dir = static_dir / "assets"
-        if assets_dir.exists():
-            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-        
+
+        @app.get("/assets/{asset_path:path}", include_in_schema=False)
+        async def serve_asset(asset_path: str):
+            # Disallow path traversal; assets are flat files emitted by vite.
+            if ".." in asset_path.split("/") or asset_path.startswith("/"):
+                return Response(
+                    content="not found",
+                    status_code=404,
+                    media_type="text/plain",
+                )
+            file_path = assets_dir / asset_path
+            if file_path.is_file():
+                content_type, _ = mimetypes.guess_type(str(file_path))
+                return FileResponse(file_path, media_type=content_type)
+            # Pick a content-type matching the requested extension so
+            # browsers don't reject the response with a strict-MIME error
+            # before the user sees the 404.
+            fallback_type, _ = mimetypes.guess_type(asset_path)
+            return Response(
+                content=f"asset not found: /assets/{asset_path}",
+                status_code=404,
+                media_type=fallback_type or "text/plain",
+            )
+
         # SPA 路由回退
         @app.get("/{full_path:path}", include_in_schema=False)
         async def serve_spa(request: Request, full_path: str):

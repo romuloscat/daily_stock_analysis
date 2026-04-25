@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] GitHub Actions 每日分析工作流补齐 `LLM_CHANNELS`、多 Key 与常用 `LLM_<NAME>_*` 渠道变量透传，避免本地可用的多模型配置在云端定时任务中失效（Fixes #1063, #872）
 - [文档] 修正 `feishu_sender.py` 中飞书自定义机器人 Webhook 消息格式示例为 interactive card JSON，并补充飞书自动化 Webhook 触发器配置教程（参数 JSON 与 `card.elements[0].text.content` 字段映射）。
 - [修复] 历史报告详情接口修正 `change_pct` 取值：使用 `is None` 判断避免把 0.0（平盘）当作缺失值丢弃，移除错误的 `change_60d` 兜底，并在 `enhanced_context.realtime` 缺涨跌幅时回退到 `realtime_quote_raw.change_pct` / `pct_chg`，避免历史详情页“不显示涨跌幅” (Fixes #1084)
+- [修复] 桌面端打包链路新增 `scripts/check_static_assets.py` 静态资源一致性检查，并在 `build-backend(.ps1|-macos.sh)` 的源 `static/` 与 PyInstaller 产物里各跑一次；同时在后端启动时校验 `index.html` 引用的 `/assets/*.js`/`*.css` 是否真实存在，发现错配时直接在 `logs/desktop.log` 打印明确错误，避免重现 Release 包打开后白屏（Refs #1064 / #1065 / #1050）
+- [改进] 后端 `/assets/*` 由显式路由托管，资源缺失时返回与请求扩展名匹配的 `text/javascript` / `text/css` 404，而不是被默认 JSON 错误响应误导排查（Refs #1064）
 
 ## [3.13.0] - 2026-04-21
 
