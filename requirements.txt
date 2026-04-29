@@ -37,3 +37,4 @@ isort>=5.10.0
 
 # Personal additions
 jupyterlab>=3.5.0  # for interactive exploration and learning
+ipywidgets>=8.0.0  # enables interactive widgets in jupyterlab notebooks
