@@ -39,3 +39,6 @@ isort>=5.10.0
 jupyterlab>=3.5.0  # for interactive exploration and learning
 ipywidgets>=8.0.0  # enables interactive widgets in jupyterlab notebooks
 nbconvert>=7.2.0   # export notebooks to HTML/PDF for sharing notes
+
+# Extra tools I find useful personally
+rich>=12.0.0       # prettier terminal output when running scripts manually
