@@ -42,3 +42,4 @@ nbconvert>=7.2.0   # export notebooks to HTML/PDF for sharing notes
 
 # Extra tools I find useful personally
 rich>=12.0.0       # prettier terminal output when running scripts manually
+openpyxl>=3.0.0    # export analysis results to Excel for easier review
